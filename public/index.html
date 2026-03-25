@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blue Sky — Bot Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=VT323&display=swap" rel="stylesheet">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root {
+    --bg: #1a1810;
+    --bg2: #211f16;
+    --bg3: #2a2820;
+    --paper: #c8b89a;
+    --paper-dim: #9a8a72;
+    --paper-dark: #6a5a44;
+    --gold: #d4af37;
+    --gold-dim: #a88a20;
+    --red: #cc3333;
+    --text: #e8d8c0;
+    --text-dim: #a89878;
+    --border: #4a4035;
+    --border-bright: #7a6a50;
+    --scan: rgba(200, 184, 154, 0.015);
+    --grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: repeating-linear-gradient(0deg, var(--scan) 0px, var(--scan) 1px, transparent 1px, transparent 3px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: var(--grain);
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 9998;
+  }
+
+  .vignette {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.7) 100%);
+    pointer-events: none;
+    z-index: 9997;
+  }
+
+  .corner {
+    position: fixed;
+    width: 40px;
+    height: 40px;
+    border-color: var(--paper-dim);
+    border-style: solid;
+    z-index: 100;
+    opacity: 0.6;
+  }
+  .corner-tl { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
+  .corner-tr { top: 16px; right: 16px; border-width: 2px 2px 0 0; }
+  .corner-bl { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }
+  .corner-br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+
+  .hud-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 60px;
+    background: linear-gradient(180deg, rgba(26,24,16,0.98) 0%, rgba(26,24,16,0) 100%);
+    z-index: 200;
+    border-bottom: 1px solid rgba(200,184,154,0.08);
+  }
+
+  .hud-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--paper-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .hud-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 18px;
+    font-style: italic;
+    color: var(--paper);
+    letter-spacing: 4px;
+    text-transform: none;
+  }
+
+  .battery-icon {
+    width: 26px;
+    height: 13px;
+    border: 1.5px solid var(--paper-dim);
+    border-radius: 2px;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    gap: 1px;
+  }
+  .battery-icon::after {
+    content: '';
+    position: absolute;
+    right: -5px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 7px;
+    background: var(--paper-dim);
+    border-radius: 0 1px 1px 0;
+  }
+  .battery-bar {
+    width: 100%;
+    height: 100%;
+    background: var(--paper-dim);
+    border-radius: 1px;
+    animation: battPulse 3s ease-in-out infinite;
+  }
+  @keyframes battPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  .rec-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--paper);
+    letter-spacing: 3px;
+  }
+  .rec-dot {
+    width: 10px;
+    height: 10px;
+    background: var(--red);
+    border-radius: 50%;
+    animation: recBlink 1.2s step-end infinite;
+    box-shadow: 0 0 8px var(--red);
+  }
+  @keyframes recBlink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+
+  .hud-time {
+    font-size: 12px;
+    color: var(--paper-dim);
+    letter-spacing: 2px;
+  }
+
+  .sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: 220px;
+    background: rgba(26, 24, 16, 0.96);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 64px 0 24px;
+    z-index: 150;
+  }
+
+  .sidebar-mascot {
+    padding: 16px 24px 24px;
+    text-align: center;
+  }
+
+  .mascot-frame {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 12px;
+    border: 1px solid var(--border-bright);
+    border-radius: 2px;
+    background: var(--bg3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .mascot-frame::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, transparent 40%, rgba(200,184,154,0.05) 100%);
+  }
+  .mascot-svg {
+    width: 60px;
+    height: 60px;
+    opacity: 0.85;
+  }
+
+  .mascot-name {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: 16px;
+    color: var(--paper);
+    letter-spacing: 3px;
+  }
+  .mascot-status {
+    font-size: 10px;
+    color: var(--paper-dim);
+    letter-spacing: 2px;
+    margin-top: 2px;
+    text-transform: uppercase;
+  }
+  .status-dot-online {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    background: #4caf50;
+    border-radius: 50%;
+    margin-right: 4px;
+    box-shadow: 0 0 4px #4caf50;
+    animation: statusPulse 2s ease-in-out infinite;
+  }
+  @keyframes statusPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .nav-items {
+    flex: 1;
+    padding: 8px 0;
+    overflow-y: auto;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 24px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 2px solid transparent;
+    position: relative;
+  }
+  .nav-item:hover, .nav-item.active {
+    color: var(--paper);
+    border-left-color: var(--paper-dim);
+    background: rgba(200,184,154,0.04);
+  }
+  .nav-item.active { border-left-color: var(--gold); color: var(--gold); }
+  .nav-icon { font-size: 14px; width: 18px; text-align: center; }
+  .nav-tag {
+    margin-left: auto;
+    font-size: 9px;
+    background: var(--border);
+    color: var(--text-dim);
+    padding: 1px 5px;
+    border-radius: 2px;
+    letter-spacing: 1px;
+  }
+  .nav-tag.new { background: rgba(212,175,55,0.15); color: var(--gold); border: 1px solid rgba(212,175,55,0.3); }
+
+  .nav-section {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--paper-dark);
+    padding: 16px 24px 6px;
+    text-transform: uppercase;
+  }
+
+  .sidebar-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    font-size: 9px;
+    color: var(--paper-dark);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .sidebar-footer span { display: block; margin-bottom: 2px; }
+
+  .main-content {
+    margin-left: 220px;
+    padding: 64px 32px 32px;
+    min-height: 100vh;
+  }
+
+  .page { display: none; }
+  .page.active { display: block; }
+
+  .page-header {
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .page-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 32px;
+    font-weight: 300;
+    font-style: italic;
+    color: var(--paper);
+    letter-spacing: 4px;
+  }
+  .page-subtitle {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+  .page-stamp {
+    font-family: 'VT323', monospace;
+    font-size: 14px;
+    color: var(--paper-dark);
+    letter-spacing: 2px;
+    text-align: right;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--gold-dim), transparent);
+  }
+  .stat-card:hover { border-color: var(--border-bright); }
+
+  .stat-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .stat-value {
+    font-family: 'VT323', monospace;
+    font-size: 36px;
+    color: var(--paper);
+    line-height: 1;
+  }
+  .stat-value.gold { color: var(--gold); }
+  .stat-value.online { color: #4caf50; }
+  .stat-sub {
+    font-size: 9px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    letter-spacing: 1px;
+  }
+  .stat-icon {
+    position: absolute;
+    top: 16px; right: 16px;
+    font-size: 20px;
+    opacity: 0.2;
+  }
+
+  .panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .panel-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(200,184,154,0.02);
+  }
+  .panel-title {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--paper-dim);
+  }
+  .panel-body { padding: 20px; }
+
+  .cmd-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .cmd-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: all 0.2s;
+    cursor: default;
+  }
+  .cmd-item:hover { border-color: var(--border-bright); background: rgba(200,184,154,0.04); }
+  .cmd-name {
+    font-size: 12px;
+    color: var(--gold);
+    letter-spacing: 1px;
+  }
+  .cmd-desc {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    letter-spacing: 1px;
+  }
+  .cmd-category {
+    margin-left: auto;
+    font-size: 8px;
+    padding: 2px 6px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--red);
+    text-transform: uppercase;
+  }
+  .live-dot {
+    width: 6px; height: 6px;
+    background: var(--red);
+    border-radius: 50%;
+    animation: recBlink 1s step-end infinite;
+  }
+
+  .activity-log {
+    list-style: none;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  .activity-log::-webkit-scrollbar { width: 4px; }
+  .activity-log::-webkit-scrollbar-track { background: var(--bg); }
+  .activity-log::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .log-item {
+    display: flex;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(74,64,53,0.5);
+    font-size: 11px;
+    align-items: flex-start;
+    animation: logIn 0.3s ease;
+  }
+  @keyframes logIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+  .log-time { color: var(--paper-dark); white-space: nowrap; letter-spacing: 1px; min-width: 60px; }
+  .log-text { color: var(--text-dim); flex: 1; }
+  .log-text strong { color: var(--paper); }
+  .log-tag {
+    font-size: 8px;
+    padding: 1px 5px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .log-tag.mod { color: var(--red); border-color: rgba(204,51,51,0.4); }
+  .log-tag.sys { color: var(--gold); border-color: rgba(212,175,55,0.4); }
+  .log-tag.msg { color: var(--paper-dim); border-color: var(--border); }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+  .meter-wrap { margin-bottom: 16px; }
+  .meter-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  .meter-track {
+    height: 4px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .meter-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--paper-dark), var(--paper));
+    transition: width 1s ease;
+    position: relative;
+  }
+  .meter-fill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 2s infinite;
+  }
+  @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+  .meter-fill.gold { background: linear-gradient(90deg, var(--gold-dim), var(--gold)); }
+  .meter-fill.red { background: linear-gradient(90deg, #8b0000, var(--red)); }
+
+  .guild-list { list-style: none; }
+  .guild-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(74,64,53,0.5);
+    transition: padding-left 0.2s;
+    cursor: default;
+  }
+  .guild-item:hover { padding-left: 6px; }
+  .guild-icon {
+    width: 36px; height: 36px;
+    border-radius: 2px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .guild-icon img { width: 100%; height: 100%; object-fit: cover; }
+  .guild-name { font-size: 12px; color: var(--paper); letter-spacing: 1px; }
+  .guild-members { font-size: 10px; color: var(--text-dim); letter-spacing: 1px; }
+  .guild-id { margin-left: auto; font-size: 9px; color: var(--paper-dark); font-family: 'VT323', monospace; }
+
+  .section-label {
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--paper-dark);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .config-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(74,64,53,0.4);
+  }
+  .config-label { font-size: 11px; color: var(--text); letter-spacing: 1px; }
+  .config-sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; letter-spacing: 1px; }
+
+  .toggle {
+    width: 40px; height: 20px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 14px; height: 14px;
+    background: var(--paper-dark);
+    border-radius: 50%;
+    top: 2px; left: 2px;
+    transition: all 0.3s;
+  }
+  .toggle.on { background: rgba(212,175,55,0.15); border-color: var(--gold); }
+  .toggle.on::after { left: 22px; background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+
+  .config-input {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    padding: 6px 12px;
+    letter-spacing: 1px;
+    width: 180px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .config-input:focus { border-color: var(--border-bright); }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--border-bright);
+    color: var(--paper);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 8px 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--paper);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .btn:hover { border-color: var(--paper); color: var(--bg); }
+  .btn:hover::before { opacity: 1; }
+  .btn span { position: relative; z-index: 1; }
+  .btn.gold-btn { border-color: var(--gold); color: var(--gold); }
+  .btn.gold-btn:hover { color: var(--bg); }
+  .btn.gold-btn:hover::before { background: var(--gold); opacity: 1; }
+
+  .ping-display {
+    font-family: 'VT323', monospace;
+    font-size: 48px;
+    color: var(--gold);
+    text-align: center;
+    padding: 20px;
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px rgba(212,175,55,0.3);
+    animation: pingFloat 2s ease-in-out infinite;
+  }
+  @keyframes pingFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+  .ping-label { text-align: center; font-size: 9px; letter-spacing: 4px; color: var(--text-dim); text-transform: uppercase; }
+
+  .waveform {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 48px;
+    padding: 0 4px;
+  }
+  .wave-bar {
+    width: 4px;
+    background: var(--paper-dim);
+    border-radius: 2px 2px 0 0;
+    animation: waveDance 1.2s ease-in-out infinite;
+    opacity: 0.6;
+  }
+  .wave-bar:nth-child(2n) { background: var(--gold-dim); animation-delay: 0.1s; }
+  .wave-bar:nth-child(3n) { animation-delay: 0.25s; }
+  .wave-bar:nth-child(4n) { animation-delay: 0.4s; }
+  @keyframes waveDance {
+    0%,100% { height: 8px; }
+    50% { height: calc(8px + var(--h, 24px)); }
+  }
+
+  .uptime-counter {
+    font-family: 'VT323', monospace;
+    font-size: 28px;
+    color: var(--paper);
+    letter-spacing: 2px;
+  }
+
+  .noise-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9996;
+    opacity: 0.03;
+    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAMAAAAp4XiDAAAAUVBMVEWFhYWDg4N3d3dtbW17e3t1dXWBgYGHh4t5eXlzc3OLi4ubm5uVlZWPj4+NjY19fX2JiYl/f39ra2uRkZGZmZlpaWmXl5dvb29xcXGTk5NnZ2c8TV1mAAAAG3RSTlNAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEAvEOwtAAAFVklEQVR4XpWWB67c2BUFb3g557T/hRo9/WUMZHlgr4Bg8Z4qQgQJlHI4A8SzFVrapvmTF9O7dme8+rnrrhjasNJyJoQhGjJNkK4yifobizoRk=");
+  }
+
+  @media (max-width: 900px) {
+    .sidebar { width: 60px; }
+    .sidebar-mascot, .nav-section, .nav-item span:not(.nav-icon), .nav-tag, .sidebar-footer { display: none; }
+    .main-content { margin-left: 60px; }
+    .two-col { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .hud-bar { padding: 0 16px; }
+  }
+
+  .fade-in {
+    animation: fadeIn 0.4s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+
+<div class="noise-overlay"></div>
+<div class="vignette"></div>
+<div class="corner corner-tl"></div>
+<div class="corner corner-tr"></div>
+<div class="corner corner-bl"></div>
+<div class="corner corner-br"></div>
+
+<div class="hud-bar">
+  <div class="hud-left">
+    <div class="battery-icon"><div class="battery-bar"></div></div>
+    <span class="hud-title">Blue Sky</span>
+    <span style="opacity:0.4">|</span>
+    <span>DASHBOARD</span>
+  </div>
+  <div class="rec-indicator">
+    <div class="rec-dot"></div>
+    <span>REC</span>
+  </div>
+  <div class="hud-time" id="hudTime">00:00:00</div>
+</div>
+
+<nav class="sidebar">
+  <div class="sidebar-mascot">
+    <div class="mascot-frame">
+      <svg class="mascot-svg" viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="30" cy="45" rx="18" ry="12" fill="#3a3328" stroke="#6a5a44" stroke-width="1"/>
+        <circle cx="30" cy="28" r="16" fill="#d4c8a8" stroke="#6a5a44" stroke-width="1"/>
+        <path d="M 16 16 Q 12 8 16 6 Q 18 4 22 10" fill="#3a3328" stroke="#6a5a44" stroke-width="1"/>
+        <path d="M 44 16 Q 48 8 44 6 Q 42 4 38 10" fill="#3a3328" stroke="#6a5a44" stroke-width="1"/>
+        <path d="M 22 26 Q 26 22 30 24 Q 34 22 38 26" stroke="#4a4035" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <ellipse cx="24" cy="30" rx="4" ry="4.5" fill="#2a2520"/>
+        <ellipse cx="36" cy="30" rx="4" ry="4.5" fill="#2a2520"/>
+        <circle cx="25.5" cy="28.5" r="1" fill="#e8d8c0" opacity="0.6"/>
+        <circle cx="37.5" cy="28.5" r="1" fill="#e8d8c0" opacity="0.6"/>
+        <path d="M 26 35 Q 30 37 34 35" stroke="#8a7a6a" stroke-width="1" fill="none" stroke-linecap="round"/>
+        <line x1="18" y1="32" x2="10" y2="30" stroke="#8a7a6a" stroke-width="0.8" opacity="0.5"/>
+        <line x1="18" y1="34" x2="10" y2="34" stroke="#8a7a6a" stroke-width="0.8" opacity="0.5"/>
+        <line x1="42" y1="32" x2="50" y2="30" stroke="#8a7a6a" stroke-width="0.8" opacity="0.5"/>
+        <line x1="42" y1="34" x2="50" y2="34" stroke="#8a7a6a" stroke-width="0.8" opacity="0.5"/>
+        <text x="28" y="33" font-size="6" fill="#d4af37" font-family="monospace">001</text>
+      </svg>
+    </div>
+    <div class="mascot-name">Sky</div>
+    <div class="mascot-status"><span class="status-dot-online"></span>Online</div>
+  </div>
+
+  <div class="nav-items">
+    <div class="nav-section">System</div>
+    <div class="nav-item active" data-page="overview" onclick="navigate(this)">
+      <span class="nav-icon">◈</span>
+      <span>Overview</span>
+    </div>
+    <div class="nav-item" data-page="commands" onclick="navigate(this)">
+      <span class="nav-icon">▶</span>
+      <span>Commands</span>
+      <span class="nav-tag">28</span>
+    </div>
+    <div class="nav-item" data-page="guilds" onclick="navigate(this)">
+      <span class="nav-icon">◎</span>
+      <span>Guilds</span>
+    </div>
+    <div class="nav-section">Monitor</div>
+    <div class="nav-item" data-page="logs" onclick="navigate(this)">
+      <span class="nav-icon">≡</span>
+      <span>Logs</span>
+      <span class="nav-tag new">Live</span>
+    </div>
+    <div class="nav-item" data-page="stats" onclick="navigate(this)">
+      <span class="nav-icon">◉</span>
+      <span>Statistics</span>
+    </div>
+    <div class="nav-section">Control</div>
+    <div class="nav-item" data-page="config" onclick="navigate(this)">
+      <span class="nav-icon">◆</span>
+      <span>Config</span>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <span>Blue Sky Bot v1.0</span>
+    <span id="sidebarUptime" style="color:var(--gold)">--:--:--</span>
+  </div>
+</nav>
+
+<main class="main-content">
+
+  <!-- OVERVIEW PAGE -->
+  <div class="page active fade-in" id="page-overview">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Overview</div>
+        <div class="page-subtitle">System Status Dashboard</div>
+      </div>
+      <div class="page-stamp" id="pageDate">-- / -- / ----<br>00:00:00</div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">◎</div>
+        <div class="stat-label">Guilds</div>
+        <div class="stat-value gold" id="statGuilds">—</div>
+        <div class="stat-sub">servers connected</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">◈</div>
+        <div class="stat-label">Users</div>
+        <div class="stat-value" id="statUsers">—</div>
+        <div class="stat-sub">in cache</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">▶</div>
+        <div class="stat-label">Commands Run</div>
+        <div class="stat-value gold" id="statCmds">—</div>
+        <div class="stat-sub">total executed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">≡</div>
+        <div class="stat-label">Messages</div>
+        <div class="stat-value" id="statMsgs">—</div>
+        <div class="stat-sub">processed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">◉</div>
+        <div class="stat-label">Ping</div>
+        <div class="stat-value online" id="statPing">—</div>
+        <div class="stat-sub">milliseconds</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">◆</div>
+        <div class="stat-label">Status</div>
+        <div class="stat-value online" id="statStatus" style="font-size:22px; padding-top:6px">ONLINE</div>
+        <div class="stat-sub">connection status</div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Performance Meters</span>
+          <span class="live-badge"><span class="live-dot"></span>Live</span>
+        </div>
+        <div class="panel-body">
+          <div class="meter-wrap">
+            <div class="meter-label"><span>Commands / Hour</span><span id="m1val">—</span></div>
+            <div class="meter-track"><div class="meter-fill gold" id="m1" style="width:0%"></div></div>
+          </div>
+          <div class="meter-wrap">
+            <div class="meter-label"><span>Messages / Hour</span><span id="m2val">—</span></div>
+            <div class="meter-track"><div class="meter-fill" id="m2" style="width:0%"></div></div>
+          </div>
+          <div class="meter-wrap">
+            <div class="meter-label"><span>API Latency</span><span id="m3val">—</span></div>
+            <div class="meter-track"><div class="meter-fill red" id="m3" style="width:0%"></div></div>
+          </div>
+          <div style="text-align:center; padding-top:16px;">
+            <div class="ping-display" id="bigPing">—</div>
+            <div class="ping-label">API Ping (ms)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">System Info</span>
+        </div>
+        <div class="panel-body">
+          <div style="margin-bottom:20px;">
+            <div class="section-label">Uptime</div>
+            <div class="uptime-counter" id="uptimeCounter">00:00:00</div>
+          </div>
+          <div style="margin-bottom:20px;">
+            <div class="section-label">Audio Monitor</div>
+            <div class="waveform" id="waveform"></div>
+          </div>
+          <div>
+            <div class="section-label">Bot Tag</div>
+            <div id="botTag" style="font-size:14px; color:var(--paper); letter-spacing:2px;">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMMANDS PAGE -->
+  <div class="page fade-in" id="page-commands">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Commands</div>
+        <div class="page-subtitle">All registered commands</div>
+      </div>
+      <div class="page-stamp">28 Commands<br>4 Categories</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🛡️ Moderation</span></div>
+      <div class="panel-body">
+        <div class="cmd-grid" id="cmdMod"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🔧 Utility & Fun</span></div>
+      <div class="panel-body">
+        <div class="cmd-grid" id="cmdUtil"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">💰 Economy & Leveling</span></div>
+      <div class="panel-body">
+        <div class="cmd-grid" id="cmdEcon"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GUILDS PAGE -->
+  <div class="page fade-in" id="page-guilds">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Guilds</div>
+        <div class="page-subtitle">Connected servers</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">Server List</span><span class="live-badge"><span class="live-dot"></span>Live</span></div>
+      <div class="panel-body">
+        <ul class="guild-list" id="guildList">
+          <li style="font-size:11px; color:var(--text-dim); padding:12px 0;">Loading guild data...</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGS PAGE -->
+  <div class="page fade-in" id="page-logs">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Activity Log</div>
+        <div class="page-subtitle">Real-time event stream</div>
+      </div>
+      <div><span class="live-badge" style="font-size:11px;"><span class="live-dot"></span>Recording</span></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Event Stream</span>
+        <button class="btn" onclick="clearLogs()"><span>Clear</span></button>
+      </div>
+      <div class="panel-body">
+        <ul class="activity-log" id="activityLog">
+          <li class="log-item">
+            <span class="log-time">System</span>
+            <span class="log-text">Dashboard initialized. Waiting for bot connection...</span>
+            <span class="log-tag sys">SYS</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS PAGE -->
+  <div class="page fade-in" id="page-stats">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Statistics</div>
+        <div class="page-subtitle">Usage analytics</div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Counters</span></div>
+        <div class="panel-body" id="statsPanel">
+          <div style="font-size:11px; color:var(--text-dim);">Loading stats...</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Connection Health</span></div>
+        <div class="panel-body">
+          <div class="config-row">
+            <div><div class="config-label">WebSocket Status</div></div>
+            <div id="wsStatus" style="font-size:11px; color:#4caf50; letter-spacing:2px;">CONNECTED</div>
+          </div>
+          <div class="config-row">
+            <div><div class="config-label">Dashboard Socket</div></div>
+            <div id="socketStatus" style="font-size:11px; color:#4caf50; letter-spacing:2px;">ACTIVE</div>
+          </div>
+          <div class="config-row">
+            <div><div class="config-label">API Latency</div></div>
+            <div id="healthPing" style="font-size:11px; color:var(--gold); letter-spacing:2px; font-family:'VT323',monospace; font-size:20px;">— ms</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIG PAGE -->
+  <div class="page fade-in" id="page-config">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Configuration</div>
+        <div class="page-subtitle">Bot settings</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">General Settings</span></div>
+      <div class="panel-body">
+        <div class="config-row">
+          <div><div class="config-label">Bot Prefix</div><div class="config-sub">Command trigger character</div></div>
+          <input class="config-input" id="cfgPrefix" value="!" maxlength="5">
+        </div>
+        <div class="config-row">
+          <div><div class="config-label">Welcome Messages</div><div class="config-sub">Send message on member join</div></div>
+          <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="config-row">
+          <div><div class="config-label">Leave Messages</div><div class="config-sub">Send message on member leave</div></div>
+          <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="config-row">
+          <div><div class="config-label">Level-up Notifications</div><div class="config-sub">Announce level ups in chat</div></div>
+          <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="config-row">
+          <div><div class="config-label">Auto-mod Filter</div><div class="config-sub">Filter bad words automatically</div></div>
+          <div class="toggle" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="config-row">
+          <div><div class="config-label">Economy System</div><div class="config-sub">Enable coins and economy</div></div>
+          <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="config-row">
+          <div><div class="config-label">Leveling System</div><div class="config-sub">Enable XP and levels</div></div>
+          <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div style="margin-top:24px; display:flex; gap:12px;">
+          <button class="btn gold-btn" onclick="saveConfig()"><span>Save Changes</span></button>
+          <button class="btn" onclick="resetConfig()"><span>Reset</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const socket = io();
+let uptimeSeconds = 0;
+let botData = {};
+
+const commandData = {
+  mod: [
+    { name: 'ban', desc: 'Ban a member' },
+    { name: 'kick', desc: 'Kick a member' },
+    { name: 'mute', desc: 'Timeout a member' },
+    { name: 'warn', desc: 'Warn a member' },
+    { name: 'warnings', desc: 'Check warnings' },
+    { name: 'purge', desc: 'Bulk delete messages' },
+    { name: 'lock', desc: 'Lock a channel' },
+    { name: 'unlock', desc: 'Unlock a channel' }
+  ],
+  util: [
+    { name: 'help', desc: 'Show all commands' },
+    { name: 'ping', desc: 'Check bot latency' },
+    { name: 'userinfo', desc: 'Show user info' },
+    { name: 'serverinfo', desc: 'Show server info' },
+    { name: 'avatar', desc: 'Show avatar' },
+    { name: 'afk', desc: 'Set AFK status' },
+    { name: 'poll', desc: 'Create a poll' },
+    { name: 'announce', desc: 'Make announcement' },
+    { name: 'ticket', desc: 'Open ticket panel' },
+    { name: '8ball', desc: 'Magic 8-ball' },
+    { name: 'flip', desc: 'Flip a coin' },
+    { name: 'roll', desc: 'Roll dice' },
+    { name: 'rps', desc: 'Rock Paper Scissors' }
+  ],
+  econ: [
+    { name: 'balance', desc: 'Check balance' },
+    { name: 'daily', desc: 'Claim daily coins' },
+    { name: 'work', desc: 'Work for coins' },
+    { name: 'transfer', desc: 'Transfer coins' },
+    { name: 'leaderboard', desc: 'Economy ranking' },
+    { name: 'rank', desc: 'Show your rank' },
+    { name: 'levels', desc: 'Level leaderboard' }
+  ]
+};
+
+function renderCommands() {
+  const renderGrid = (id, cmds, cat) => {
+    const el = document.getElementById(id);
+    el.innerHTML = cmds.map(c => `
+      <div class="cmd-item">
+        <div>
+          <div class="cmd-name">!${c.name}</div>
+          <div class="cmd-desc">${c.desc}</div>
+        </div>
+        <div class="cmd-category">${cat}</div>
+      </div>
+    `).join('');
+  };
+  renderGrid('cmdMod', commandData.mod, 'MOD');
+  renderGrid('cmdUtil', commandData.util, 'UTIL');
+  renderGrid('cmdEcon', commandData.econ, 'ECO');
+}
+
+function navigate(el) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  const page = document.getElementById('page-' + el.dataset.page);
+  if (page) { page.classList.add('active'); page.classList.remove('fade-in'); void page.offsetWidth; page.classList.add('fade-in'); }
+  if (el.dataset.page === 'guilds') fetchGuilds();
+  if (el.dataset.page === 'stats') renderStatsPanel();
+}
+
+function updateHudTime() {
+  const now = new Date();
+  document.getElementById('hudTime').textContent = now.toTimeString().slice(0, 8);
+  document.getElementById('pageDate').innerHTML = `${now.toLocaleDateString('en-GB')}<br>${now.toTimeString().slice(0, 8)}`;
+}
+
+function formatUptime(s) {
+  const h = Math.floor(s / 3600).toString().padStart(2, '0');
+  const m = Math.floor((s % 3600) / 60).toString().padStart(2, '0');
+  const sec = (s % 60).toString().padStart(2, '0');
+  return `${h}:${m}:${sec}`;
+}
+
+function buildWaveform() {
+  const wf = document.getElementById('waveform');
+  wf.innerHTML = '';
+  for (let i = 0; i < 32; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'wave-bar';
+    const h = Math.floor(Math.random() * 32) + 8;
+    bar.style.setProperty('--h', h + 'px');
+    bar.style.animationDelay = (Math.random() * 1.2) + 's';
+    bar.style.height = '8px';
+    wf.appendChild(bar);
+  }
+}
+
+function updateStats(data) {
+  botData = data;
+  if (data.guilds !== undefined) document.getElementById('statGuilds').textContent = data.guilds;
+  if (data.users !== undefined) document.getElementById('statUsers').textContent = data.users;
+  if (data.commandsRun !== undefined) document.getElementById('statCmds').textContent = data.commandsRun;
+  if (data.messagesProcessed !== undefined) document.getElementById('statMsgs').textContent = data.messagesProcessed;
+  if (data.ping !== undefined) {
+    const p = data.ping;
+    document.getElementById('statPing').textContent = p;
+    document.getElementById('bigPing').textContent = p;
+    document.getElementById('healthPing').textContent = p + ' ms';
+    const pingPct = Math.min(p / 500 * 100, 100);
+    document.getElementById('m3').style.width = pingPct + '%';
+    document.getElementById('m3val').textContent = p + 'ms';
+  }
+  if (data.uptime !== undefined) {
+    uptimeSeconds = data.uptime;
+    const fmt = formatUptime(data.uptime);
+    document.getElementById('uptimeCounter').textContent = fmt;
+    document.getElementById('sidebarUptime').textContent = fmt;
+  }
+  if (data.commandsRun !== undefined) {
+    const pct = Math.min(data.commandsRun / 1000 * 100, 100);
+    document.getElementById('m1').style.width = pct + '%';
+    document.getElementById('m1val').textContent = data.commandsRun;
+  }
+  if (data.messagesProcessed !== undefined) {
+    const pct = Math.min(data.messagesProcessed / 5000 * 100, 100);
+    document.getElementById('m2').style.width = pct + '%';
+    document.getElementById('m2val').textContent = data.messagesProcessed;
+  }
+
+  addLog(`Stats updated — Ping: ${data.ping}ms, Guilds: ${data.guilds}`, 'sys');
+}
+
+async function fetchGuilds() {
+  try {
+    const res = await fetch('/api/guilds');
+    const guilds = await res.json();
+    const list = document.getElementById('guildList');
+    if (!guilds.length) { list.innerHTML = '<li style="font-size:11px; color:var(--text-dim); padding:12px 0;">No guilds found.</li>'; return; }
+    list.innerHTML = guilds.map(g => `
+      <li class="guild-item">
+        <div class="guild-icon">${g.icon ? `<img src="${g.icon}" alt="${g.name}">` : g.name[0]}</div>
+        <div>
+          <div class="guild-name">${g.name}</div>
+          <div class="guild-members">${g.memberCount} members</div>
+        </div>
+        <div class="guild-id">${g.id}</div>
+      </li>
+    `).join('');
+  } catch(e) {
+    document.getElementById('guildList').innerHTML = '<li style="font-size:11px; color:var(--text-dim); padding:12px 0;">Bot offline — no guild data available.</li>';
+  }
+}
+
+function renderStatsPanel() {
+  const panel = document.getElementById('statsPanel');
+  const rows = [
+    ['Total Commands Run', botData.commandsRun ?? '—'],
+    ['Total Messages', botData.messagesProcessed ?? '—'],
+    ['Active Guilds', botData.guilds ?? '—'],
+    ['Cached Users', botData.users ?? '—'],
+    ['API Latency', (botData.ping ?? '—') + (botData.ping ? 'ms' : '')],
+    ['Uptime', botData.uptime ? formatUptime(botData.uptime) : '—']
+  ];
+  panel.innerHTML = rows.map(([k, v]) => `
+    <div class="config-row">
+      <div class="config-label">${k}</div>
+      <div style="font-family:'VT323',monospace; font-size:20px; color:var(--gold); letter-spacing:2px;">${v}</div>
+    </div>
+  `).join('');
+}
+
+let logCount = 0;
+function addLog(text, type = 'msg') {
+  const log = document.getElementById('activityLog');
+  const now = new Date();
+  const time = now.toTimeString().slice(0, 8);
+  const li = document.createElement('li');
+  li.className = 'log-item';
+  li.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${text}</span><span class="log-tag ${type}">${type.toUpperCase()}</span>`;
+  log.insertBefore(li, log.firstChild);
+  if (log.children.length > 50) log.removeChild(log.lastChild);
+  logCount++;
+}
+
+function clearLogs() {
+  document.getElementById('activityLog').innerHTML = '<li class="log-item"><span class="log-time">System</span><span class="log-text">Log cleared.</span><span class="log-tag sys">SYS</span></li>';
+}
+
+function saveConfig() {
+  addLog('Configuration saved by dashboard user.', 'sys');
+  const btn = event.target.closest('button');
+  btn.querySelector('span').textContent = 'Saved!';
+  setTimeout(() => btn.querySelector('span').textContent = 'Save Changes', 2000);
+}
+
+function resetConfig() {
+  document.getElementById('cfgPrefix').value = '!';
+  document.querySelectorAll('.toggle').forEach((t, i) => {
+    t.className = 'toggle' + ([0,1,2,4,5].includes(i) ? ' on' : '');
+  });
+  addLog('Configuration reset to defaults.', 'sys');
+}
+
+socket.on('connect', () => {
+  addLog('Dashboard socket connected.', 'sys');
+  document.getElementById('socketStatus').textContent = 'ACTIVE';
+  document.getElementById('socketStatus').style.color = '#4caf50';
+});
+
+socket.on('disconnect', () => {
+  addLog('Dashboard socket disconnected.', 'sys');
+  document.getElementById('socketStatus').textContent = 'DISCONNECTED';
+  document.getElementById('socketStatus').style.color = 'var(--red)';
+});
+
+socket.on('stats', updateStats);
+
+async function init() {
+  try {
+    const res = await fetch('/api/stats');
+    const data = await res.json();
+    updateStats(data);
+    document.getElementById('botTag').textContent = 'Blue Sky#0001';
+    addLog('API connection established.', 'sys');
+  } catch(e) {
+    addLog('Bot offline — dashboard in standby mode.', 'sys');
+    document.getElementById('statStatus').textContent = 'OFFLINE';
+    document.getElementById('statStatus').style.color = 'var(--red)';
+  }
+}
+
+setInterval(updateHudTime, 1000);
+setInterval(() => { if (botData.uptime !== undefined) botData.uptime++; }, 1000);
+
+buildWaveform();
+renderCommands();
+updateHudTime();
+init();
+</script>
+</body>
+</html>
